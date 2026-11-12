@@ -21,6 +21,12 @@ ALLOWED_HOSTS = [
     if host.strip()
 ]
 
+# Render provides its assigned hostname automatically; custom domains can be set
+# explicitly with DJANGO_ALLOWED_HOSTS.
+render_external_hostname = os.getenv("RENDER_EXTERNAL_HOSTNAME", "")
+if render_external_hostname and render_external_hostname not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(render_external_hostname)
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -36,6 +42,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -65,7 +72,13 @@ ASGI_APPLICATION = "config.asgi.application"
 
 database_url = os.getenv("DATABASE_URL")
 if database_url:
-    DATABASES = {"default": dj_database_url.parse(database_url, conn_max_age=600)}
+    DATABASES = {
+        "default": dj_database_url.parse(
+            database_url,
+            conn_max_age=60,
+            conn_health_checks=True,
+        )
+    }
 else:
     DATABASES = {
         "default": {
@@ -92,7 +105,17 @@ LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True
-STATIC_URL = "static/"
+STATIC_URL = "/static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 CORS_ALLOWED_ORIGINS = [
@@ -116,3 +139,21 @@ REST_FRAMEWORK = {
 SIMPLE_JWT = {
     "TOKEN_OBTAIN_SERIALIZER": "core.serializers.CommanderTokenSerializer",
 }
+
+# Comma-separated HTTPS origins allowed to submit CSRF-protected requests,
+# such as Django admin forms. CORS_ALLOWED_ORIGINS is configured separately.
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",")
+    if origin.strip()
+]
+if render_external_hostname:
+    render_origin = f"https://{render_external_hostname}"
+    if render_origin not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(render_origin)
+
+# Render terminates TLS at its reverse proxy and sets X-Forwarded-Proto.
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True

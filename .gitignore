@@ -6,3 +6,7 @@ dist
 __pycache__/
 *.py[cod]
 db.sqlite3
+.env.*
+!.env.example
+staticfiles/
+.pytest_cache/
